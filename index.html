@@ -30,6 +30,28 @@
       font-size:40px;
       display:none;
     }
+
+    #stars {
+      position:absolute;
+      pointer-events:none;
+    }
+
+    .star {
+      position:absolute;
+      font-size:20px;
+      animation: explode 0.8s ease-out forwards;
+    }
+
+    @keyframes explode {
+      from {
+        transform: translate(0,0) scale(1);
+        opacity: 1;
+      }
+      to {
+        transform: translate(var(--x), var(--y)) scale(0.5);
+        opacity: 0;
+      }
+    }
   </style>
 </head>
 
@@ -38,13 +60,50 @@
 <video id="video" autoplay playsinline></video>
 <div id="status">Loading...</div>
 <div id="reward">🎉 GREAT JOB! 🎉</div>
+<div id="stars"></div>
 
 <script>
 const video = document.getElementById('video');
 const statusText = document.getElementById('status');
 const reward = document.getElementById('reward');
+const starsContainer = document.getElementById('stars');
+
+// 🔊 Simple pop sound (base64 so no file needed)
+const popSound = new Audio("data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA..."); // short sound placeholder
 
 let openStart = null;
+let lastStarTime = 0;
+
+// ⭐ Spawn stars at mouth position
+function spawnStars(x, y) {
+  const now = Date.now();
+
+  // limit frequency
+  if (now - lastStarTime < 200) return;
+  lastStarTime = now;
+
+  popSound.currentTime = 0;
+  popSound.play().catch(()=>{});
+
+  for (let i = 0; i < 8; i++) {
+    const star = document.createElement("div");
+    star.className = "star";
+    star.innerText = "⭐";
+
+    star.style.left = x + "px";
+    star.style.top = y + "px";
+
+    const dx = (Math.random() - 0.5) * 200 + "px";
+    const dy = (Math.random() - 0.5) * 200 + "px";
+
+    star.style.setProperty('--x', dx);
+    star.style.setProperty('--y', dy);
+
+    starsContainer.appendChild(star);
+
+    setTimeout(() => star.remove(), 800);
+  }
+}
 
 // Start camera
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
@@ -53,7 +112,7 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
   video.play();
   startFaceMesh();
 })
-.catch(err => {
+.catch(() => {
   statusText.innerText = "Camera blocked ❌";
 });
 
@@ -77,12 +136,20 @@ function startFaceMesh() {
     }
 
     const landmarks = results.multiFaceLandmarks[0];
+
     const upper = landmarks[13];
     const lower = landmarks[14];
+
     const mouthOpen = Math.abs(upper.y - lower.y);
+
+    // 👇 Convert to screen position
+    const mouthX = upper.x * window.innerWidth;
+    const mouthY = upper.y * window.innerHeight;
 
     if (mouthOpen > 0.02) {
       statusText.innerText = "OPEN 😁";
+
+      spawnStars(mouthX, mouthY);
 
       if (!openStart) openStart = Date.now();
 
