@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brushing Helper</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <style>
+    body { margin:0; background:black; overflow:hidden; font-family:sans-serif; }
+    video { width:100vw; height:100vh; object-fit:cover; }
+
+    #status {
+      position:absolute;
+      top:20px;
+      left:20px;
+      color:white;
+      font-size:22px;
+      background:rgba(0,0,0,0.5);
+      padding:10px;
+      border-radius:10px;
+    }
+
+    #reward {
+      position:absolute;
+      bottom:50px;
+      width:100%;
+      text-align:center;
+      font-size:40px;
+      display:none;
+    }
+  </style>
+</head>
+
+<body>
+
+<video id="video" autoplay playsinline></video>
+<div id="status">Loading...</div>
+<div id="reward">🎉 GREAT JOB! 🎉</div>
+
+<script>
+const video = document.getElementById('video');
+const statusText = document.getElementById('status');
+const reward = document.getElementById('reward');
+
+let openStart = null;
+
+// Start camera
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+.then(stream => {
+  video.srcObject = stream;
+  video.play();
+  startFaceMesh();
+})
+.catch(err => {
+  statusText.innerText = "Camera blocked ❌";
+});
+
+// MediaPipe
+function startFaceMesh() {
+  const faceMesh = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true
+  });
+
+  faceMesh.onResults(results => {
+    if (!results.multiFaceLandmarks) {
+      statusText.innerText = "Find face 👀";
+      openStart = null;
+      reward.style.display = "none";
+      return;
+    }
+
+    const landmarks = results.multiFaceLandmarks[0];
+    const upper = landmarks[13];
+    const lower = landmarks[14];
+    const mouthOpen = Math.abs(upper.y - lower.y);
+
+    if (mouthOpen > 0.02) {
+      statusText.innerText = "OPEN 😁";
+
+      if (!openStart) openStart = Date.now();
+
+      let duration = (Date.now() - openStart) / 1000;
+
+      if (duration > 3) {
+        reward.style.display = "block";
+      }
+
+    } else {
+      statusText.innerText = "OPEN WIDE 😄";
+      openStart = null;
+      reward.style.display = "none";
+    }
+  });
+
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      await faceMesh.send({ image: video });
+    },
+    width: 640,
+    height: 480
+  });
+
+  camera.start();
+}
+</script>
+
+</body>
+</html>
