@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-  <div id="status">NEW VERSION LOADED 🚀</div>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Brushing Helper</title>
@@ -21,6 +20,7 @@
       background:rgba(0,0,0,0.5);
       padding:10px;
       border-radius:10px;
+      z-index:10;
     }
 
     #reward {
@@ -30,28 +30,17 @@
       text-align:center;
       font-size:40px;
       display:none;
+      z-index:10;
     }
 
-    #stars {
+    #startBtn {
       position:absolute;
-      pointer-events:none;
-    }
-
-    .star {
-      position:absolute;
-      font-size:20px;
-      animation: explode 0.8s ease-out forwards;
-    }
-
-    @keyframes explode {
-      from {
-        transform: translate(0,0) scale(1);
-        opacity: 1;
-      }
-      to {
-        transform: translate(var(--x), var(--y)) scale(0.5);
-        opacity: 0;
-      }
+      top:50%;
+      left:50%;
+      transform:translate(-50%, -50%);
+      font-size:24px;
+      padding:15px 25px;
+      z-index:20;
     }
   </style>
 </head>
@@ -59,68 +48,82 @@
 <body>
 
 <video id="video" autoplay playsinline></video>
-<div id="status">Loading...</div>
+<div id="status">Tap to Start</div>
 <div id="reward">🎉 GREAT JOB! 🎉</div>
-<div id="stars"></div>
+<button id="startBtn">START</button>
 
 <script>
 const video = document.getElementById('video');
 const statusText = document.getElementById('status');
 const reward = document.getElementById('reward');
-const starsContainer = document.getElementById('stars');
-
-// 🔊 Simple pop sound (base64 so no file needed)
-const popSound = new Audio("data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA..."); // short sound placeholder
+const startBtn = document.getElementById('startBtn');
 
 let openStart = null;
-let lastStarTime = 0;
+let soundEnabled = false;
 
-// ⭐ Spawn stars at mouth position
+// 🔊 simple sound
+const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
+
+// ⭐ STAR FUNCTION (FIXED)
 function spawnStars(x, y) {
-  const now = Date.now();
+  console.log("SPAWN", x, y);
 
-  // limit frequency
-  if (now - lastStarTime < 200) return;
-  lastStarTime = now;
-
-  popSound.currentTime = 0;
-  popSound.play().catch(()=>{});
-
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     const star = document.createElement("div");
-    star.className = "star";
     star.innerText = "⭐";
 
+    star.style.position = "fixed";
     star.style.left = x + "px";
     star.style.top = y + "px";
+    star.style.fontSize = "24px";
+    star.style.zIndex = "9999";
 
-    const dx = (Math.random() - 0.5) * 200 + "px";
-    const dy = (Math.random() - 0.5) * 200 + "px";
+    const dx = (Math.random() - 0.5) * 150;
+    const dy = (Math.random() - 0.5) * 150;
 
-    star.style.setProperty('--x', dx);
-    star.style.setProperty('--y', dy);
+    star.animate([
+      { transform: "translate(0,0)", opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px)`, opacity: 0 }
+    ], {
+      duration: 800,
+      easing: "ease-out"
+    });
 
-    starsContainer.appendChild(star);
-
+    document.body.appendChild(star);
     setTimeout(() => star.remove(), 800);
+  }
+
+  if (soundEnabled) {
+    popSound.currentTime = 0;
+    popSound.play().catch(()=>{});
   }
 }
 
-// Start camera
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-.then(stream => {
-  video.srcObject = stream;
-  video.play();
-  startFaceMesh();
-})
-.catch(() => {
-  statusText.innerText = "Camera blocked ❌";
-});
+// START BUTTON (required for sound + camera)
+startBtn.onclick = async () => {
+  soundEnabled = true;
+  startBtn.style.display = "none";
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" }
+    });
+
+    video.srcObject = stream;
+    video.play();
+    startFaceMesh();
+
+  } catch (err) {
+    statusText.innerText = "Camera blocked ❌";
+    console.error(err);
+  }
+};
 
 // MediaPipe
 function startFaceMesh() {
   const faceMesh = new FaceMesh({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    locateFile: (file) =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
   });
 
   faceMesh.setOptions({
@@ -137,15 +140,15 @@ function startFaceMesh() {
     }
 
     const landmarks = results.multiFaceLandmarks[0];
-
     const upper = landmarks[13];
     const lower = landmarks[14];
 
     const mouthOpen = Math.abs(upper.y - lower.y);
 
-    // 👇 Convert to screen position
-    const mouthX = upper.x * window.innerWidth;
-    const mouthY = upper.y * window.innerHeight;
+    // ✅ Correct position mapping
+    const rect = video.getBoundingClientRect();
+    const mouthX = rect.left + upper.x * rect.width;
+    const mouthY = rect.top + upper.y * rect.height;
 
     if (mouthOpen > 0.02) {
       statusText.innerText = "OPEN 😁";
@@ -153,7 +156,6 @@ function startFaceMesh() {
       spawnStars(mouthX, mouthY);
 
       if (!openStart) openStart = Date.now();
-
       let duration = (Date.now() - openStart) / 1000;
 
       if (duration > 3) {
