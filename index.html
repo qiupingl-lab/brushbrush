@@ -29,15 +29,18 @@
 
   .balloon {
     position: fixed;
-    width: 50px; height: 70px;
-    transform: translate(-50%, -50%) scale(0.2);
+    width: 80px; 
+    height: 100px; 
+    background-color: red;
+    border-radius: 50%;
+    transform: translate(-50%, -50%) scale(0.3);
     z-index: 9999;
     pointer-events:none;
   }
 
   .firework {
     position: fixed;
-    width: 6px; height: 6px;
+    width: 8px; height: 8px;
     border-radius: 50%;
     pointer-events: none;
     z-index:9999;
@@ -64,14 +67,8 @@ let balloonTimeout = null;
 let balloonAnimation = null;
 let soundEnabled = false;
 
-// Balloon image URL
-const balloonImgs = [
-  "https://upload.wikimedia.org/wikipedia/commons/9/9b/Red_Balloon.png",
-  "https://upload.wikimedia.org/wikipedia/commons/5/5e/Blue_Balloon.png",
-  "https://upload.wikimedia.org/wikipedia/commons/6/66/Yellow_Balloon.png"
-];
-
 const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
+const colors = ["red","blue","yellow","green","purple","orange","pink"];
 
 // START BUTTON
 startBtn.onclick = async () => {
@@ -89,20 +86,20 @@ startBtn.onclick = async () => {
   }
 };
 
-// Create balloon
+// Create circle balloon
 function createBalloon(x, y) {
   removeBalloon();
 
-  balloon = document.createElement('img');
+  balloon = document.createElement('div');
   balloon.className='balloon';
-  balloon.src = balloonImgs[Math.floor(Math.random()*balloonImgs.length)];
+  balloon.style.background = colors[Math.floor(Math.random()*colors.length)];
   document.body.appendChild(balloon);
 
-  let scale = 0.2;
-  let floatY = y - 150; // far above face
+  let scale = 0.3;
+  let floatY = y - 200; // higher above face
   balloonAnimation = setInterval(()=>{
     scale += 0.005;
-    floatY -= 0.2; // float upward
+    floatY -= 0.25; // float upward
     balloon.style.transform = `translate(-50%, -50%) scale(${scale})`;
     balloon.style.left = x+'px';
     balloon.style.top = floatY+'px';
@@ -126,7 +123,6 @@ function popBalloon() {
 
 // Fireworks effect
 function createFireworks(x, y) {
-  const colors = ["red","blue","yellow","green","purple","orange","pink"];
   for (let i=0;i<30;i++){
     const fw = document.createElement('div');
     fw.className='firework';
