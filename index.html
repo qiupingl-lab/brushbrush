@@ -24,8 +24,8 @@
 
   .balloon {
     position: fixed;
-    width: 160px;   /* doubled width */
-    height: 200px;  /* doubled height */
+    width: 160px;   /* base size */
+    height: 200px;  /* base size */
     background-color: red;
     border-radius: 50%;
     transform: translate(-50%, -50%) scale(0.3);
@@ -54,11 +54,11 @@ const video = document.getElementById('video');
 const statusText = document.getElementById('status');
 const startBtn = document.getElementById('startBtn');
 
-let openStart = null;
 let balloon = null;
 let balloonTimeout = null;
 let balloonAnimation = null;
 let soundEnabled = false;
+let mouthClosedSinceLastPop = true;  // NEW: only allow balloon if mouth was closed
 
 const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
 const colors = ["red","blue","yellow","green","purple","orange","pink"];
@@ -79,7 +79,7 @@ startBtn.onclick = async () => {
   }
 };
 
-// Create balloon
+// Create balloon with dramatic growth and wobble
 function createBalloon(x, y) {
   removeBalloon();
 
@@ -89,13 +89,19 @@ function createBalloon(x, y) {
   document.body.appendChild(balloon);
 
   let scale = 0.3;
-  let floatY = y - 200; // high above face
+  let floatY = y - 250; // higher
+  let angle = 0;
+
   balloonAnimation = setInterval(()=>{
-    scale += 0.005;
-    floatY -= 0.25;
-    balloon.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    scale += 0.02; // faster growth
+    floatY -= 0.4; // float faster
+    angle += 0.05; // wobble
+    balloon.style.transform = `translate(-50%, -50%) scale(${scale}) rotate(${Math.sin(angle)*10}deg)`;
     balloon.style.left = x+'px';
     balloon.style.top = floatY+'px';
+
+    // optional: stop at very large size
+    if(scale>2.5) popBalloon();
   }, 30);
 
   balloonTimeout = setTimeout(()=>{
@@ -103,7 +109,7 @@ function createBalloon(x, y) {
   }, 5000);
 }
 
-// Pop balloon + fireworks
+// Pop balloon with more intense fireworks
 function popBalloon() {
   if (!balloon) return;
   if (soundEnabled) { popSound.currentTime=0; popSound.play().catch(()=>{}); }
@@ -112,11 +118,12 @@ function popBalloon() {
   createFireworks(rect.left + rect.width/2, rect.top + rect.height/2);
 
   removeBalloon();
+  mouthClosedSinceLastPop = false; // wait for mouth to close
 }
 
 // Fireworks effect
 function createFireworks(x, y) {
-  for (let i=0;i<30;i++){
+  for (let i=0;i<50;i++){  // more particles
     const fw = document.createElement('div');
     fw.className='firework';
     fw.style.left=x+'px';
@@ -125,16 +132,16 @@ function createFireworks(x, y) {
     document.body.appendChild(fw);
 
     const angle = Math.random()*2*Math.PI;
-    const dist = 80 + Math.random()*80;
+    const dist = 100 + Math.random()*100;
     const dx = Math.cos(angle)*dist;
     const dy = Math.sin(angle)*dist - 50;
 
     fw.animate([
       { transform:'translate(0,0) scale(1)', opacity:1 },
       { transform:`translate(${dx}px,${dy}px) scale(0.5)`, opacity:0 }
-    ], { duration:1200, easing:'ease-out' });
+    ], { duration:1500, easing:'ease-out' });
 
-    setTimeout(()=>fw.remove(),1200);
+    setTimeout(()=>fw.remove(),1500);
   }
 }
 
@@ -155,7 +162,6 @@ function startFaceMesh() {
   faceMesh.onResults(results=>{
     if (!results.multiFaceLandmarks) {
       statusText.innerText="Find face 👀";
-      openStart=null;
       removeBalloon();
       return;
     }
@@ -171,12 +177,12 @@ function startFaceMesh() {
 
     if (mouthOpen>0.02) {
       statusText.innerText="OPEN 😁";
-      if (!balloon) createBalloon(mouthX,mouthY);
-
-      if (!openStart) openStart=Date.now();
+      if (!balloon && mouthClosedSinceLastPop) {
+        createBalloon(mouthX,mouthY);
+      }
     } else {
       statusText.innerText="OPEN WIDE 😄";
-      openStart=null;
+      mouthClosedSinceLastPop = true; // now allowed to spawn new balloon
       removeBalloon();
     }
 
