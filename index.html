@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Brushing Balloon Fun</title>
+<title>Brushing Balloon Fun 2.0</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -61,12 +61,10 @@ const startBtn = document.getElementById('startBtn');
 let openStart = null;
 let balloon = null;
 let balloonTimeout = null;
+let balloonAnimation = null;
 let soundEnabled = false;
 
-// 🎈 Pop sound
 const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
-
-// Random balloon colors
 const colors = ["red","blue","yellow","green","purple","orange","pink"];
 
 // START BUTTON
@@ -85,26 +83,27 @@ startBtn.onclick = async () => {
   }
 };
 
-// Balloon creation
+// Create and float balloon
 function createBalloon(x, y) {
   removeBalloon();
 
   balloon = document.createElement('div');
   balloon.className = 'balloon';
   balloon.style.left = x + "px";
-  balloon.style.top = (y - 50) + "px"; // above mouth
+  balloon.style.top = (y - 50) + "px";
   balloon.style.background = colors[Math.floor(Math.random()*colors.length)];
   document.body.appendChild(balloon);
 
   let scale = 0.2;
-  const growthInterval = setInterval(() => {
-    if (!balloon) return;
-    scale += 0.01;
+  let floatY = y - 50;
+  balloonAnimation = setInterval(() => {
+    scale += 0.005;
+    floatY -= 0.3; // float upward
     balloon.style.transform = `translate(-50%, -50%) scale(${scale})`;
-  }, 50);
+    balloon.style.top = floatY + 'px';
+  }, 30);
 
   balloonTimeout = setTimeout(() => {
-    clearInterval(growthInterval);
     popBalloon();
   }, 5000);
 }
@@ -112,20 +111,15 @@ function createBalloon(x, y) {
 // Pop balloon with confetti
 function popBalloon() {
   if (!balloon) return;
-  if (soundEnabled) {
-    popSound.currentTime = 0;
-    popSound.play().catch(()=>{});
-  }
+  if (soundEnabled) { popSound.currentTime = 0; popSound.play().catch(()=>{}); }
 
   const rect = balloon.getBoundingClientRect();
   createConfetti(rect.left + rect.width/2, rect.top + rect.height/2);
 
-  balloon.remove();
-  balloon = null;
-  balloonTimeout = null;
+  removeBalloon();
 }
 
-// Confetti particles
+// Confetti with arcs
 function createConfetti(x, y) {
   for (let i=0;i<20;i++) {
     const conf = document.createElement('div');
@@ -135,30 +129,30 @@ function createConfetti(x, y) {
     conf.style.background=colors[Math.floor(Math.random()*colors.length)];
     document.body.appendChild(conf);
 
-    const dx=(Math.random()-0.5)*200;
-    const dy=(Math.random()-0.5)*200;
-    const rot=Math.random()*360;
+    const angle = Math.random()*Math.PI*2;
+    const distance = 100 + Math.random()*100;
+    const dx = Math.cos(angle)*distance;
+    const dy = Math.sin(angle)*distance - 50; // arc upward
 
     conf.animate([
-      { transform:`translate(0,0) rotate(0deg)`, opacity:1},
-      { transform:`translate(${dx}px,${dy}px) rotate(${rot}deg)`, opacity:0 }
-    ], { duration:1000, easing:'ease-out'});
+      { transform:`translate(0,0) rotate(0deg)`, opacity:1 },
+      { transform:`translate(${dx}px,${dy}px) rotate(${Math.random()*360}deg)`, opacity:0 }
+    ], { duration:1200, easing:'ease-out' });
 
-    setTimeout(()=>conf.remove(),1000);
+    setTimeout(()=>conf.remove(),1200);
   }
 }
 
-// Remove balloon if mouth closes
 function removeBalloon() {
   if (balloon) { balloon.remove(); balloon=null; }
   if (balloonTimeout) { clearTimeout(balloonTimeout); balloonTimeout=null; }
+  if (balloonAnimation) { clearInterval(balloonAnimation); balloonAnimation=null; }
 }
 
-// MediaPipe
+// MediaPipe face detection
 function startFaceMesh() {
   const faceMesh = new FaceMesh({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
   });
 
   faceMesh.setOptions({ maxNumFaces:1, refineLandmarks:true });
@@ -194,11 +188,8 @@ function startFaceMesh() {
       removeBalloon();
     }
 
-    // Move balloon smoothly
-    if (balloon) {
-      balloon.style.left = mouthX + 'px';
-      balloon.style.top = (mouthY - 50) + 'px';
-    }
+    // Follow mouth horizontally
+    if (balloon) balloon.style.left = mouthX+'px';
   });
 
   const camera = new Camera(video,{
