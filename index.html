@@ -1,48 +1,63 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brushing Helper</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brushing Balloon App</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
-  <style>
-    body { margin:0; background:black; overflow:hidden; font-family:sans-serif; }
-    video { width:100vw; height:100vh; object-fit:cover; }
+<style>
+  body { margin:0; background:black; overflow:hidden; font-family:sans-serif; }
+  video { width:100vw; height:100vh; object-fit:cover; }
 
-    #status {
-      position:absolute;
-      top:20px;
-      left:20px;
-      color:white;
-      font-size:22px;
-      background:rgba(0,0,0,0.5);
-      padding:10px;
-      border-radius:10px;
-      z-index:10;
-    }
+  #status {
+    position:absolute;
+    top:20px;
+    left:20px;
+    color:white;
+    font-size:22px;
+    background:rgba(0,0,0,0.5);
+    padding:10px;
+    border-radius:10px;
+    z-index:10;
+  }
 
-    #reward {
-      position:absolute;
-      bottom:50px;
-      width:100%;
-      text-align:center;
-      font-size:40px;
-      display:none;
-      z-index:10;
-    }
+  #reward {
+    position:absolute;
+    bottom:50px;
+    width:100%;
+    text-align:center;
+    font-size:40px;
+    display:none;
+    z-index:10;
+  }
 
-    #startBtn {
-      position:absolute;
-      top:50%;
-      left:50%;
-      transform:translate(-50%, -50%);
-      font-size:24px;
-      padding:15px 25px;
-      z-index:20;
-    }
-  </style>
+  #startBtn {
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%, -50%);
+    font-size:24px;
+    padding:15px 25px;
+    z-index:20;
+  }
+
+  .balloon {
+    position: fixed;
+    width: 30px;
+    height: 40px;
+    background: red;
+    border-radius: 50% 50% 50% 50%;
+    transform: translate(-50%, -50%) scale(0.2);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+</style>
 </head>
 
 <body>
@@ -59,65 +74,71 @@ const reward = document.getElementById('reward');
 const startBtn = document.getElementById('startBtn');
 
 let openStart = null;
-let soundEnabled = false;
+let balloon = null;
+let balloonTimeout = null;
 
-// 🔊 simple sound
+// 🎈 Pop sound (optional)
 const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
 
-// ⭐ STAR FUNCTION (FIXED)
-function spawnStars(x, y) {
-  console.log("SPAWN", x, y);
-
-  for (let i = 0; i < 10; i++) {
-    const star = document.createElement("div");
-    star.innerText = "⭐";
-
-    star.style.position = "fixed";
-    star.style.left = x + "px";
-    star.style.top = y + "px";
-    star.style.fontSize = "24px";
-    star.style.zIndex = "9999";
-
-    const dx = (Math.random() - 0.5) * 150;
-    const dy = (Math.random() - 0.5) * 150;
-
-    star.animate([
-      { transform: "translate(0,0)", opacity: 1 },
-      { transform: `translate(${dx}px, ${dy}px)`, opacity: 0 }
-    ], {
-      duration: 800,
-      easing: "ease-out"
-    });
-
-    document.body.appendChild(star);
-    setTimeout(() => star.remove(), 800);
-  }
-
-  if (soundEnabled) {
-    popSound.currentTime = 0;
-    popSound.play().catch(()=>{});
-  }
-}
-
-// START BUTTON (required for sound + camera)
+// START BUTTON
 startBtn.onclick = async () => {
-  soundEnabled = true;
   startBtn.style.display = "none";
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" }
-    });
-
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }});
     video.srcObject = stream;
     video.play();
     startFaceMesh();
-
   } catch (err) {
     statusText.innerText = "Camera blocked ❌";
     console.error(err);
   }
 };
+
+// Balloon animation
+function createBalloon(x, y) {
+  removeBalloon(); // remove existing if any
+
+  balloon = document.createElement('div');
+  balloon.className = 'balloon';
+  balloon.style.left = x + "px";
+  balloon.style.top = y + "px";
+
+  document.body.appendChild(balloon);
+
+  // Gradually grow over 5 seconds
+  let scale = 0.2;
+  const growthInterval = setInterval(() => {
+    scale += 0.01;
+    balloon.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  }, 50);
+
+  // Pop after 5 seconds
+  balloonTimeout = setTimeout(() => {
+    clearInterval(growthInterval);
+    popBalloon();
+  }, 5000);
+}
+
+function popBalloon() {
+  if (!balloon) return;
+  popSound.currentTime = 0;
+  popSound.play().catch(()=>{});
+  balloon.remove();
+  balloon = null;
+  balloonTimeout = null;
+}
+
+function removeBalloon() {
+  if (balloon) {
+    balloon.remove();
+    balloon = null;
+  }
+  if (balloonTimeout) {
+    clearTimeout(balloonTimeout);
+    balloonTimeout = null;
+  }
+}
 
 // MediaPipe
 function startFaceMesh() {
@@ -136,6 +157,7 @@ function startFaceMesh() {
       statusText.innerText = "Find face 👀";
       openStart = null;
       reward.style.display = "none";
+      removeBalloon();
       return;
     }
 
@@ -145,7 +167,7 @@ function startFaceMesh() {
 
     const mouthOpen = Math.abs(upper.y - lower.y);
 
-    // ✅ Correct position mapping
+    // Mouth screen position
     const rect = video.getBoundingClientRect();
     const mouthX = rect.left + upper.x * rect.width;
     const mouthY = rect.top + upper.y * rect.height;
@@ -153,33 +175,33 @@ function startFaceMesh() {
     if (mouthOpen > 0.02) {
       statusText.innerText = "OPEN 😁";
 
-      spawnStars(mouthX, mouthY);
+      if (!balloon) createBalloon(mouthX, mouthY);
 
       if (!openStart) openStart = Date.now();
       let duration = (Date.now() - openStart) / 1000;
-
-      if (duration > 3) {
-        reward.style.display = "block";
-      }
+      if (duration > 3) reward.style.display = "block";
 
     } else {
       statusText.innerText = "OPEN WIDE 😄";
       openStart = null;
       reward.style.display = "none";
+      removeBalloon(); // remove balloon when mouth closes
+    }
+
+    // Update balloon position if mouth moves
+    if (balloon) {
+      balloon.style.left = mouthX + "px";
+      balloon.style.top = mouthY + "px";
     }
   });
 
   const camera = new Camera(video, {
-    onFrame: async () => {
-      await faceMesh.send({ image: video });
-    },
+    onFrame: async () => await faceMesh.send({ image: video }),
     width: 640,
     height: 480
   });
-
   camera.start();
 }
 </script>
-
 </body>
 </html>
