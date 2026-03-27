@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Brushing Multi-Balloons Fireworks</title>
+<title>Brushing Balloon Fireworks</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -10,12 +10,6 @@
 <style>
   body { margin:0; background:black; overflow:hidden; font-family:sans-serif; }
   video { width:100vw; height:100vh; object-fit:cover; }
-
-  #status {
-    position:absolute; top:20px; left:20px; color:white;
-    font-size:22px; background:rgba(0,0,0,0.5);
-    padding:10px; border-radius:10px; z-index:10;
-  }
 
   #startBtn {
     position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
@@ -45,16 +39,18 @@
 
 <body>
 <video id="video" autoplay playsinline></video>
-<div id="status">Tap to Start</div>
 <button id="startBtn">START</button>
 
 <script>
 const video = document.getElementById('video');
-const statusText = document.getElementById('status');
 const startBtn = document.getElementById('startBtn');
 
-let balloons = []; // array of active balloons
+let balloon = null;
+let balloonTimeout = null;
+let balloonAnimation = null;
 let soundEnabled = false;
+let mouthClosedSinceLastPop = true;
+
 const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
 const colors = ["red","blue","yellow","green","purple","orange","pink"];
 
@@ -69,58 +65,49 @@ startBtn.onclick = async () => {
     video.play();
     startFaceMesh();
   } catch (err) {
-    statusText.innerText = "Camera blocked ❌";
     console.error(err);
   }
 };
 
-// Balloon class for individual balloon behavior
-class Balloon {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y - 200; // float above face
-    this.scale = 0.3;
-    this.angle = 0;
-    this.color = colors[Math.floor(Math.random()*colors.length)];
+// Create balloon
+function createBalloon(x, y) {
+  removeBalloon();
 
-    this.el = document.createElement('div');
-    this.el.className = 'balloon';
-    this.el.style.background = this.color;
-    this.updatePosition();
-    document.body.appendChild(this.el);
+  balloon = document.createElement('div');
+  balloon.className='balloon';
+  balloon.style.background = colors[Math.floor(Math.random()*colors.length)];
+  document.body.appendChild(balloon);
 
-    this.animation = setInterval(()=>this.animate(), 30);
-    this.timeout = setTimeout(()=>this.pop(), 5000);
-  }
+  let scale = 0.3;
+  let floatY = y - 200;
+  let angle = 0;
 
-  animate() {
-    this.scale += 0.015; // faster growth
-    this.y -= 0.3; // float upward
-    this.angle += 0.05;
-    this.el.style.transform = `translate(-50%, -50%) scale(${this.scale}) rotate(${Math.sin(this.angle)*10}deg)`;
-    this.el.style.left = this.x+'px';
-    this.el.style.top = this.y+'px';
-    if(this.scale > 2.5) this.pop(); // automatic pop if too big
-  }
+  balloonAnimation = setInterval(()=>{
+    scale += 0.02;
+    floatY -= 0.4;
+    angle += 0.05;
+    balloon.style.transform = `translate(-50%, -50%) scale(${scale}) rotate(${Math.sin(angle)*10}deg)`;
+    balloon.style.left = x+'px';
+    balloon.style.top = floatY+'px';
+    if(scale > 2.5) popBalloon();
+  }, 30);
 
-  pop() {
-    if(!this.el) return;
-    if(soundEnabled){ popSound.currentTime=0; popSound.play().catch(()=>{}); }
-    const rect = this.el.getBoundingClientRect();
-    createFireworks(rect.left + rect.width/2, rect.top + rect.height/2);
-    clearInterval(this.animation);
-    clearTimeout(this.timeout);
-    this.el.remove();
-    balloons = balloons.filter(b=>b!==this);
-  }
-
-  updatePosition() {
-    this.el.style.left = this.x+'px';
-    this.el.style.top = this.y+'px';
-  }
+  balloonTimeout = setTimeout(()=>{ popBalloon(); }, 5000);
 }
 
-// Fireworks effect
+// Pop balloon
+function popBalloon() {
+  if(!balloon) return;
+  if(soundEnabled){ popSound.currentTime=0; popSound.play().catch(()=>{}); }
+
+  const rect = balloon.getBoundingClientRect();
+  createFireworks(rect.left + rect.width/2, rect.top + rect.height/2);
+
+  removeBalloon();
+  mouthClosedSinceLastPop = false;
+}
+
+// Fireworks
 function createFireworks(x, y) {
   for(let i=0;i<50;i++){
     const fw = document.createElement('div');
@@ -144,6 +131,13 @@ function createFireworks(x, y) {
   }
 }
 
+// Remove balloon
+function removeBalloon() {
+  if(balloon) { balloon.remove(); balloon=null; }
+  if(balloonTimeout) { clearTimeout(balloonTimeout); balloonTimeout=null; }
+  if(balloonAnimation) { clearInterval(balloonAnimation); balloonAnimation=null; }
+}
+
 // MediaPipe FaceMesh
 function startFaceMesh() {
   const faceMesh = new FaceMesh({
@@ -154,10 +148,7 @@ function startFaceMesh() {
   let mouthClosed = true;
 
   faceMesh.onResults(results=>{
-    if (!results.multiFaceLandmarks) {
-      statusText.innerText="Find face 👀";
-      return;
-    }
+    if (!results.multiFaceLandmarks) return;
 
     const landmarks = results.multiFaceLandmarks[0];
     const upper = landmarks[13];
@@ -169,16 +160,17 @@ function startFaceMesh() {
     const mouthY = rect.top + upper.y*rect.height;
 
     if(mouthOpen>0.02){
-      statusText.innerText="OPEN 😁";
-      // spawn a new balloon every 1.2s while mouth is open
-      if(mouthClosed || balloons.length===0){
-        balloons.push(new Balloon(mouthX, mouthY));
+      if(!balloon && mouthClosedSinceLastPop){
+        createBalloon(mouthX, mouthY);
       }
       mouthClosed=false;
     }else{
-      statusText.innerText="OPEN WIDE 😄";
       mouthClosed=true;
+      mouthClosedSinceLastPop=true;
+      removeBalloon();
     }
+
+    if(balloon) balloon.style.left=mouthX+'px';
   });
 
   const camera = new Camera(video,{
