@@ -26,18 +26,17 @@ video { width:100vw; height:100vh; object-fit:cover; }
   z-index: 9999;
 }
 
-.firework {
-  position: fixed;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  z-index:9999;
-}
-
 .surprise {
   position: fixed;
-  font-size: 80px;
-  transform: translate(-50%, -50%) scale(0);
+  font-size: 70px;
   z-index: 9999;
+}
+
+.firework {
+  position: fixed;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  z-index:9999;
 }
 </style>
 </head>
@@ -52,30 +51,17 @@ const startBtn = document.getElementById('startBtn');
 
 let balloon = null;
 let balloonState = null;
+let surpriseEl = null;
 
 let baseline = null;
-let openStartTime = null;
-let lastPopTime = 0;
-
-let mouthState = "closed";
-let lastStateChange = 0;
+let widthBaseline = null;
 
 const OPEN_DELTA = 0.012;
-const CLOSE_DELTA = 0.006;   // lower → prevents toothbrush flicker
-const HOLD_TIME = 300;
-const COOLDOWN = 1200;
-
-const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
 const colors = ["red","blue","yellow","green","purple","orange","pink"];
 const surprises = ["🐶","🐱","🦁","🐼","🐸","🚗","🚕","🚜","🚀","✈️"];
 
-let soundEnabled = false;
-
-// START
 startBtn.onclick = async () => {
-  soundEnabled = true;
   startBtn.style.display = "none";
-
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }});
   video.srcObject = stream;
   video.play();
@@ -84,6 +70,7 @@ startBtn.onclick = async () => {
 
 // CREATE BALLOON
 function createBalloon(x, y) {
+  if(balloon) return;
   balloon = document.createElement('div');
   balloon.className='balloon';
   balloon.style.background = colors[Math.floor(Math.random()*colors.length)];
@@ -95,33 +82,16 @@ function createBalloon(x, y) {
     x: x,
     angle: 0
   };
-}
 
-// POP
-function popBalloon() {
-  if(!balloon) return;
-
-  if(soundEnabled){
-    popSound.currentTime = 0;
-    popSound.play().catch(()=>{});
-  }
-
-  const rect = balloon.getBoundingClientRect();
-  const x = rect.left + rect.width/2;
-  const y = rect.top + rect.height/2;
-
-  createFireworks(x, y);
-  createSurprise(x, y);
-
-  balloon.remove();
-  balloon = null;
-  balloonState = null;
-  lastPopTime = Date.now();
+  surpriseEl = document.createElement('div');
+  surpriseEl.className = 'surprise';
+  surpriseEl.innerText = surprises[Math.floor(Math.random()*surprises.length)];
+  document.body.appendChild(surpriseEl);
 }
 
 // FIREWORKS
-function createFireworks(x, y) {
-  for(let i=0;i<40;i++){
+function createFireworkBurst(x, y) {
+  for(let i=0;i<20;i++){
     const fw = document.createElement('div');
     fw.className='firework';
     fw.style.left=x+'px';
@@ -130,37 +100,15 @@ function createFireworks(x, y) {
     document.body.appendChild(fw);
 
     const angle = Math.random()*2*Math.PI;
-    const dist = 100 + Math.random()*100;
+    const dist = 80 + Math.random()*80;
 
     fw.animate([
       { transform:'translate(0,0)', opacity:1 },
       { transform:`translate(${Math.cos(angle)*dist}px,${Math.sin(angle)*dist}px)`, opacity:0 }
-    ], { duration:1200 });
+    ], { duration:800 });
 
-    setTimeout(()=>fw.remove(),1200);
+    setTimeout(()=>fw.remove(),800);
   }
-}
-
-// SURPRISE
-function createSurprise(x, y) {
-  const el = document.createElement('div');
-  el.className = 'surprise';
-  el.innerText = surprises[Math.floor(Math.random()*surprises.length)];
-  el.style.left = x + "px";
-  el.style.top = y + "px";
-
-  document.body.appendChild(el);
-
-  el.animate([
-    { transform:'translate(-50%,-50%) scale(0)', opacity:0 },
-    { transform:'translate(-50%,-50%) scale(1.4)', opacity:1 },
-    { transform:'translate(-50%,-50%) scale(1)', opacity:1 }
-  ], { duration:600 });
-
-  setTimeout(()=>{
-    el.animate([{opacity:1},{opacity:0}],{duration:800});
-    setTimeout(()=>el.remove(),800);
-  },1500);
 }
 
 // FACE MESH
@@ -171,10 +119,11 @@ function startFaceMesh() {
 
   faceMesh.setOptions({ maxNumFaces:3, refineLandmarks:true });
 
+  let lastFireworkTime = 0;
+
   faceMesh.onResults(results=>{
     if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
 
-    // pick central face
     let face = results.multiFaceLandmarks[0];
     let best = Infinity;
 
@@ -187,76 +136,57 @@ function startFaceMesh() {
 
     const upper = face[13];
     const lower = face[14];
-    const mouthHeight = Math.abs(upper.y - lower.y);
+    const left = face[61];
+    const right = face[291];
 
+    const mouthHeight = Math.abs(upper.y - lower.y);
+    const mouthWidth = Math.abs(left.x - right.x);
     const rect = video.getBoundingClientRect();
     const x = rect.left + upper.x * rect.width;
     const y = rect.top + upper.y * rect.height;
 
-    const now = Date.now();
-
-    // BASELINE
+    // baselines
     if (baseline === null) {
       baseline = mouthHeight;
+      widthBaseline = mouthWidth;
       return;
     }
-    baseline = baseline * 0.9 + mouthHeight * 0.1;
+    baseline = baseline*0.9 + mouthHeight*0.1;
+    widthBaseline = widthBaseline*0.9 + mouthWidth*0.1;
 
     const openThreshold = baseline + OPEN_DELTA;
-    const closeThreshold = baseline + CLOSE_DELTA;
+    const ratio = mouthHeight / mouthWidth;
 
-    // 🎯 STICKY STATE (KEY FIX)
-    if (mouthState === "closed" && mouthHeight > openThreshold) {
-      mouthState = "open";
-      lastStateChange = now;
+    const isOpen = mouthHeight > openThreshold;
+    const isSmile = mouthWidth > widthBaseline*1.15 && mouthHeight < openThreshold && ratio<0.4;
+
+    // always create balloon if open and not exists
+    if(isOpen && !balloon){
+      createBalloon(x, y);
     }
 
-    if (mouthState === "open" && mouthHeight < closeThreshold) {
-      // must stay low for 300ms before closing
-      if (now - lastStateChange > 300) {
-        mouthState = "closed";
-      }
-    }
-
-    // CREATE BALLOON
-    if (mouthState === "open") {
-      if (!openStartTime) openStartTime = now;
-
-      const held = (now - openStartTime) > HOLD_TIME;
-      const cooled = (now - lastPopTime) > COOLDOWN;
-
-      if (!balloon && held && cooled) {
-        createBalloon(x, y);
-      }
-
-    } else {
-      openStartTime = null;
-    }
-
-    // 🎈 CONTROL BALLOON
-    if (balloon && balloonState) {
-
-      // smooth follow
-      balloonState.x += (x - balloonState.x) * 0.2;
-
-      // ✅ grow CONTINUOUSLY while open
-      if (mouthState === "open") {
-        balloonState.scale += 0.015;
+    // CONTROL BALLOON
+    if(balloon && balloonState){
+      balloonState.x += (x - balloonState.x)*0.2;
+      if(isOpen){ // growth ONLY depends on open
+        balloonState.scale += 0.02;
         balloonState.y -= 0.3;
       }
-
-      // wobble
       balloonState.angle += 0.05;
-
-      balloon.style.transform =
-        `translate(-50%, -50%) scale(${balloonState.scale}) rotate(${Math.sin(balloonState.angle)*10}deg)`;
-
+      balloon.style.transform = `translate(-50%,-50%) scale(${balloonState.scale}) rotate(${Math.sin(balloonState.angle)*10}deg)`;
       balloon.style.left = balloonState.x + "px";
       balloon.style.top = balloonState.y + "px";
 
-      if (balloonState.scale > 2.5) {
-        popBalloon();
+      if(surpriseEl){
+        surpriseEl.style.left = balloonState.x + "px";
+        surpriseEl.style.top = (balloonState.y - 100) + "px";
       }
+    }
+
+    // CONTINUOUS FIREWORKS ON SMILE
+    if(isSmile && Date.now()-lastFireworkTime>200){
+      createFireworkBurst(x, y);
+      lastFireworkTime = Date.now();
     }
   });
 
