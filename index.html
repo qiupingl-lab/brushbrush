@@ -29,7 +29,6 @@ let lastFrameTime=null;
 
 const OPEN_DELTA=0.012;
 const BALLOON_POP_TIME=5000; // 5 seconds cumulative open
-const CLOSE_HOLD=300; // 0.3s to reset cumulative if fully closed
 const colors=["red","blue","yellow","green","purple","orange","pink"];
 const surprises=["🐶","🐱","🦁","🐼","🐸","🚗","🚕","🚜","🚀","✈️"];
 
@@ -52,7 +51,6 @@ function createBalloon(x,y){
 
 function popBalloon(){
   if(!balloon) return;
-  // Emoji appears once
   const surpriseEl=document.createElement('div');
   surpriseEl.className='surprise';
   surpriseEl.innerText=surprises[Math.floor(Math.random()*surprises.length)];
@@ -127,24 +125,21 @@ function startFaceMesh(){
     // create balloon if mouth opens
     if(openSmoother>0.5 && !balloon) createBalloon(x,y);
 
-    // grow balloon if exists
+    // balloon grows as long as mouth mostly open
     if(balloon && balloonState && openSmoother>0.5){
       balloonState.x += (x-balloonState.x)*0.2;
       balloonState.y += ((y-220)-balloonState.y)*0.2;
-      balloonState.scale +=0.02;
+      balloonState.scale +=0.02; // grow every frame
       balloonState.angle +=0.05;
       balloon.style.left=balloonState.x+'px';
       balloon.style.top=balloonState.y+'px';
       balloon.style.transform=`translate(-50%,-50%) scale(${balloonState.scale}) rotate(${Math.sin(balloonState.angle)*10}deg)`;
-      cumulativeOpenTime += dt; // add milliseconds of open
-    } else {
-      // if mouth mostly closed, reduce cumulativeOpenTime gradually
-      cumulativeOpenTime -= dt;
-      if(cumulativeOpenTime<0) cumulativeOpenTime=0;
+
+      cumulativeOpenTime += dt; // add time for pop
     }
 
-    // pop balloon after 5s cumulative open
-    if(balloon && cumulativeOpenTime >= BALLOON_POP_TIME){
+    // minor dips do NOT stop growth; only pop after 5s cumulative open
+    if(balloon && cumulativeOpenTime>=BALLOON_POP_TIME){
       popBalloon();
     }
 
