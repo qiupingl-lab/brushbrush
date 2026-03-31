@@ -54,18 +54,19 @@ let balloon = null;
 let balloonAnimation = null;
 let balloonTimeout = null;
 
-let soundEnabled = false;
+let baseline = null;
 let openStartTime = null;
 let lastPopTime = 0;
 
-let mouthState = "closed";
-let lastStateChange = 0;
-
+const OPEN_DELTA = 0.012;
+const HOLD_TIME = 400;
 const COOLDOWN = 1500;
 
 const popSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
 const colors = ["red","blue","yellow","green","purple","orange","pink"];
 const surprises = ["🐶","🐱","🦁","🐼","🐸","🚗","🚕","🚜","🚀","✈️"];
+
+let soundEnabled = false;
 
 // START
 startBtn.onclick = async () => {
@@ -78,7 +79,7 @@ startBtn.onclick = async () => {
   startFaceMesh();
 };
 
-// CREATE BALLOON
+// BALLOON
 function createBalloon(x, y) {
   removeBalloon();
 
@@ -172,7 +173,7 @@ function createSurprise(x, y) {
   },1500);
 }
 
-// REMOVE BALLOON
+// REMOVE
 function removeBalloon() {
   if(balloon){ balloon.remove(); balloon=null; }
   if(balloonAnimation){ clearInterval(balloonAnimation); balloonAnimation=null; }
@@ -193,7 +194,7 @@ function startFaceMesh() {
       return;
     }
 
-    // pick most central face
+    // choose most central face
     let face = results.multiFaceLandmarks[0];
     let best = Infinity;
 
@@ -206,43 +207,35 @@ function startFaceMesh() {
 
     const upper = face[13];
     const lower = face[14];
-    const left = face[78];
-    const right = face[308];
 
     const mouthHeight = Math.abs(upper.y - lower.y);
-    const mouthWidth = Math.abs(left.x - right.x);
-
-    const openness = mouthHeight*1.2 + mouthWidth*0.5;
-
-    const OPEN_THRESHOLD = 0.035;
-    const CLOSE_THRESHOLD = 0.025;
-
-    const now = Date.now();
-
-    // sticky state
-    if(openness > OPEN_THRESHOLD){
-      mouthState = "open";
-      lastStateChange = now;
-    } else if(openness < CLOSE_THRESHOLD){
-      if(now - lastStateChange > 300){
-        mouthState = "closed";
-      }
-    }
 
     const rect = video.getBoundingClientRect();
     const x = rect.left + upper.x * rect.width;
     const y = rect.top + upper.y * rect.height;
 
-    // trigger logic
-    if(mouthState === "open"){
+    const now = Date.now();
 
-      if(!openStartTime) openStartTime = now;
+    // 🎯 BASELINE (adaptive)
+    if (baseline === null) {
+      baseline = mouthHeight;
+      return;
+    }
+    baseline = baseline * 0.9 + mouthHeight * 0.1;
 
-      const held = (now - openStartTime) > 300;
-      const cooldown = (now - lastPopTime) > COOLDOWN;
+    const isOpen = mouthHeight > (baseline + OPEN_DELTA);
 
-      if(!balloon && held && cooldown){
+    // 🎯 HOLD + COOLDOWN
+    if (isOpen) {
+
+      if (!openStartTime) openStartTime = now;
+
+      const held = (now - openStartTime) > HOLD_TIME;
+      const cooled = (now - lastPopTime) > COOLDOWN;
+
+      if (!balloon && held && cooled) {
         createBalloon(x, y);
+        lastPopTime = now;
       }
 
     } else {
