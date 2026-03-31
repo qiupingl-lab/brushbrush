@@ -57,7 +57,11 @@ let baseline = null;
 let openStartTime = null;
 let lastPopTime = 0;
 
+let mouthState = "closed";
+let lastStateChange = 0;
+
 const OPEN_DELTA = 0.012;
+const CLOSE_DELTA = 0.006;   // lower → prevents toothbrush flicker
 const HOLD_TIME = 300;
 const COOLDOWN = 1200;
 
@@ -198,10 +202,24 @@ function startFaceMesh() {
     }
     baseline = baseline * 0.9 + mouthHeight * 0.1;
 
-    const isOpen = mouthHeight > (baseline + OPEN_DELTA);
+    const openThreshold = baseline + OPEN_DELTA;
+    const closeThreshold = baseline + CLOSE_DELTA;
 
-    // TRIGGER
-    if (isOpen) {
+    // 🎯 STICKY STATE (KEY FIX)
+    if (mouthState === "closed" && mouthHeight > openThreshold) {
+      mouthState = "open";
+      lastStateChange = now;
+    }
+
+    if (mouthState === "open" && mouthHeight < closeThreshold) {
+      // must stay low for 300ms before closing
+      if (now - lastStateChange > 300) {
+        mouthState = "closed";
+      }
+    }
+
+    // CREATE BALLOON
+    if (mouthState === "open") {
       if (!openStartTime) openStartTime = now;
 
       const held = (now - openStartTime) > HOLD_TIME;
@@ -215,14 +233,14 @@ function startFaceMesh() {
       openStartTime = null;
     }
 
-    // 🎈 CONTROL BALLOON (KEY CHANGE)
+    // 🎈 CONTROL BALLOON
     if (balloon && balloonState) {
 
       // smooth follow
       balloonState.x += (x - balloonState.x) * 0.2;
 
-      // grow ONLY when open
-      if (isOpen) {
+      // ✅ grow CONTINUOUSLY while open
+      if (mouthState === "open") {
         balloonState.scale += 0.015;
         balloonState.y -= 0.3;
       }
@@ -236,7 +254,6 @@ function startFaceMesh() {
       balloon.style.left = balloonState.x + "px";
       balloon.style.top = balloonState.y + "px";
 
-      // POP condition
       if (balloonState.scale > 2.5) {
         popBalloon();
       }
