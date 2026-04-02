@@ -2,138 +2,185 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Brush Fun Balloon</title>
+<title>Balloon Game</title>
+
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
 <style>
 body { margin:0; background:black; overflow:hidden; }
 video { width:100vw; height:100vh; object-fit:cover; }
-#startBtn { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:24px; padding:15px 25px; z-index:20; }
-.balloon { position: fixed; width: 160px; height: 200px; border-radius: 50%; background: red; transform: translate(-50%, -50%) scale(0.3); z-index:9999; }
-.surprise { position: fixed; font-size:70px; z-index:9999; }
+
+#startBtn {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  font-size:24px; padding:15px 25px; z-index:20;
+}
+
+.balloon {
+  position:fixed;
+  width:160px; height:200px;
+  border-radius:50%;
+  transform:translate(-50%,-50%) scale(0.3);
+  z-index:9999;
+}
+
+.surprise {
+  position:fixed;
+  font-size:70px;
+  z-index:9999;
+}
 </style>
 </head>
+
 <body>
 <video id="video" autoplay playsinline></video>
 <button id="startBtn">START</button>
+
 <script>
 const video = document.getElementById('video');
 const startBtn = document.getElementById('startBtn');
 
-let balloon = null;
-let balloonState = null;
-let baseline = null, widthBaseline = null;
-let openStartTime = null;
-const BALLOON_POP_MS = 5000;
-const OPEN_DELTA = 0.012;
-const colors = ["red","blue","yellow","green","purple","orange","pink"];
-const surprises = ["🐶","🐱","🦁","🐼","🐸","🚗","🚕","🚜","🚀","✈️"];
+let balloon=null, state=null;
+let baseline=null;
 
-startBtn.onclick = async () => {
-  startBtn.style.display = "none";
+let isOpen=false;
+let closeTimer=null;
+let openStartTime=null;
+
+const OPEN_THRESHOLD = 0.015;
+const CLOSE_THRESHOLD = 0.008;   // lower → hysteresis
+const CLOSE_DELAY = 400;
+const POP_TIME = 5000;
+
+const colors=["red","blue","yellow","green","purple","orange"];
+const surprises=["🐶","🐱","🦁","🐼","🚗","🚀"];
+
+startBtn.onclick = async ()=>{
+  startBtn.style.display="none";
   const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}});
   video.srcObject = stream;
   video.play();
   startFaceMesh();
 };
 
-function createBalloon(x, y){
-  balloon = document.createElement('div');
-  balloon.className = 'balloon';
-  balloon.style.background = colors[Math.floor(Math.random()*colors.length)];
+function createBalloon(x,y){
+  balloon=document.createElement('div');
+  balloon.className='balloon';
+  balloon.style.background=colors[Math.floor(Math.random()*colors.length)];
   document.body.appendChild(balloon);
-  balloonState = {x:x, y:y-220, scale:0.3, angle:0};
-  openStartTime = Date.now();
+
+  state={x:x, y:y-220, scale:0.3, angle:0};
+  openStartTime=Date.now();
 }
 
 function removeBalloon(){
   if(balloon){
     balloon.remove();
-    balloon = null;
-    balloonState = null;
-    openStartTime = null;
+    balloon=null;
+    state=null;
+    openStartTime=null;
   }
 }
 
 function popBalloon(){
   if(!balloon) return;
-  const surpriseEl = document.createElement('div');
-  surpriseEl.className = 'surprise';
-  surpriseEl.innerText = surprises[Math.floor(Math.random()*surprises.length)];
-  surpriseEl.style.left = balloonState.x + 'px';
-  surpriseEl.style.top = (balloonState.y-100) + 'px';
-  document.body.appendChild(spreadEl);
 
-  // remove balloon
-  balloon.remove();
-  balloon = null;
-  balloonState = null;
-  openStartTime = null;
+  const el=document.createElement('div');
+  el.className='surprise';
+  el.innerText=surprises[Math.floor(Math.random()*surprises.length)];
+  el.style.left=state.x+'px';
+  el.style.top=(state.y-100)+'px';
+  document.body.appendChild(el);
 
-  setTimeout(()=>{ surpriseEl.remove(); },1000);
+  removeBalloon();
+  setTimeout(()=>el.remove(),1000);
 }
 
 function startFaceMesh(){
-  const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-  faceMesh.setOptions({maxNumFaces:3, refineLandmarks:true});
-  faceMesh.onResults(results => {
-    if(!results.multiFaceLandmarks || results.multiFaceLandmarks.length===0){
-      removeBalloon(); // no face => remove balloon
+  const faceMesh=new FaceMesh({
+    locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+  });
+
+  faceMesh.setOptions({maxNumFaces:1, refineLandmarks:true});
+
+  faceMesh.onResults(res=>{
+    if(!res.multiFaceLandmarks || res.multiFaceLandmarks.length===0){
+      removeBalloon();
       return;
     }
 
-    // pick closest face
-    let face = results.multiFaceLandmarks[0];
-    let bestDist = Infinity;
-    results.multiFaceLandmarks.forEach(f=>{
-      const cx = (f[13].x+f[14].x)/2;
-      const cy = (f[13].y+f[14].y)/2;
-      const dist = Math.abs(cx-0.5)+Math.abs(cy-0.5);
-      if(dist<bestDist){ bestDist=dist; face=f; }
-    });
+    const face=res.multiFaceLandmarks[0];
+    const upper=face[13], lower=face[14];
+    const left=face[61], right=face[291];
 
-    const upper = face[13], lower = face[14];
-    const left = face[61], right = face[291];
-    const mouthHeight = Math.abs(upper.y - lower.y);
-    const mouthWidth = Math.abs(left.x - right.x);
-    const rect = video.getBoundingClientRect();
-    const x = rect.left + upper.x*rect.width;
-    const y = rect.top + upper.y*rect.height;
+    const h=Math.abs(upper.y-lower.y);
+    const w=Math.abs(left.x-right.x);
+    const ratio=h/w;
 
-    if(baseline === null){ baseline = mouthHeight; widthBaseline = mouthWidth; return; }
-    baseline = baseline*0.9 + mouthHeight*0.1;
-    widthBaseline = widthBaseline*0.9 + mouthWidth*0.1;
+    const rect=video.getBoundingClientRect();
+    const x=rect.left+upper.x*rect.width;
+    const y=rect.top+upper.y*rect.height;
 
-    const openThreshold = baseline + OPEN_DELTA;
-    const isOpen = (mouthHeight > openThreshold);
+    // --- BASELINE only when CLOSED ---
+    if(baseline===null){
+      baseline=h;
+      return;
+    }
 
-    if(isOpen){
-      // create balloon if none
-      if(!balloon) createBalloon(x,y);
+    if(!isOpen){
+      baseline = baseline*0.9 + h*0.1;
+    }
 
-      // grow continuously
-      if(balloon && balloonState){
-        balloonState.x += (x - balloonState.x)*0.2;
-        balloonState.y += ((y-220) - balloonState.y)*0.2;
-        balloonState.scale += 0.03;
-        balloonState.angle += 0.05;
-        balloon.style.left = balloonState.x + 'px';
-        balloon.style.top = balloonState.y + 'px';
-        balloon.style.transform = `translate(-50%,-50%) scale(${balloonState.scale}) rotate(${Math.sin(balloonState.angle)*10}deg)`;
-
-        // check pop
-        if(openStartTime && (Date.now() - openStartTime)>=BALLOON_POP_MS){
-          popBalloon();
-        }
+    // --- HYSTERESIS DETECTION ---
+    if(!isOpen){
+      if(h > baseline + OPEN_THRESHOLD){
+        isOpen=true;
+        if(closeTimer){ clearTimeout(closeTimer); closeTimer=null; }
       }
     } else {
-      // mouth closed => remove balloon immediately
-      removeBalloon();
+      if(h < baseline + CLOSE_THRESHOLD){
+        if(!closeTimer){
+          closeTimer=setTimeout(()=>{
+            isOpen=false;
+            removeBalloon();
+          }, CLOSE_DELAY);
+        }
+      } else {
+        if(closeTimer){ clearTimeout(closeTimer); closeTimer=null; }
+      }
+    }
+
+    // --- CREATE ---
+    if(isOpen && !balloon){
+      createBalloon(x,y);
+    }
+
+    // --- CONTINUOUS GROW ---
+    if(isOpen && balloon && state){
+      state.x += (x-state.x)*0.2;
+      state.y += ((y-220)-state.y)*0.2;
+
+      state.scale += 0.045; // strong visible growth
+      state.angle += 0.05;
+
+      balloon.style.left=state.x+'px';
+      balloon.style.top=state.y+'px';
+      balloon.style.transform=
+        `translate(-50%,-50%) scale(${state.scale}) rotate(${Math.sin(state.angle)*10}deg)`;
+
+      // --- POP ---
+      if(openStartTime && Date.now()-openStartTime > POP_TIME){
+        popBalloon();
+      }
     }
 
   });
 
-  new Camera(video, {onFrame: async()=>await faceMesh.send({image: video}), width:640, height:480}).start();
+  new Camera(video,{
+    onFrame: async()=>await faceMesh.send({image:video}),
+    width:640,height:480
+  }).start();
 }
 </script>
 </body>
