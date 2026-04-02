@@ -27,7 +27,7 @@ video { width:100vw; height:100vh; object-fit:cover; }
 
 .surprise {
   position:fixed;
-  font-size:70px;
+  font-size:80px;
   z-index:9999;
 }
 </style>
@@ -48,13 +48,16 @@ let isOpen=false;
 let closeTimer=null;
 let openStartTime=null;
 
+let cooldownUntil = 0;
+
 const OPEN_THRESHOLD = 0.015;
-const CLOSE_THRESHOLD = 0.008;   // lower → hysteresis
+const CLOSE_THRESHOLD = 0.008;
 const CLOSE_DELAY = 400;
 const POP_TIME = 5000;
+const COOLDOWN_MS = 1800;
 
 const colors=["red","blue","yellow","green","purple","orange"];
-const surprises=["🐶","🐱","🦁","🐼","🚗","🚀"];
+const surprises=["🐶","🐱","🦁","🐼","🚗","🚀","🎉","⭐"];
 
 startBtn.onclick = async ()=>{
   startBtn.style.display="none";
@@ -94,7 +97,11 @@ function popBalloon(){
   document.body.appendChild(el);
 
   removeBalloon();
-  setTimeout(()=>el.remove(),1000);
+
+  // 👉 start cooldown so new balloon DOESN’T appear immediately
+  cooldownUntil = Date.now() + COOLDOWN_MS;
+
+  setTimeout(()=>el.remove(),1500);
 }
 
 function startFaceMesh(){
@@ -115,14 +122,11 @@ function startFaceMesh(){
     const left=face[61], right=face[291];
 
     const h=Math.abs(upper.y-lower.y);
-    const w=Math.abs(left.x-right.x);
-    const ratio=h/w;
 
     const rect=video.getBoundingClientRect();
     const x=rect.left+upper.x*rect.width;
     const y=rect.top+upper.y*rect.height;
 
-    // --- BASELINE only when CLOSED ---
     if(baseline===null){
       baseline=h;
       return;
@@ -132,7 +136,9 @@ function startFaceMesh(){
       baseline = baseline*0.9 + h*0.1;
     }
 
-    // --- HYSTERESIS DETECTION ---
+    const now=Date.now();
+
+    // --- HYSTERESIS ---
     if(!isOpen){
       if(h > baseline + OPEN_THRESHOLD){
         isOpen=true;
@@ -151,17 +157,22 @@ function startFaceMesh(){
       }
     }
 
+    // 🚫 BLOCK new balloon during cooldown
+    if(now < cooldownUntil){
+      return;
+    }
+
     // --- CREATE ---
     if(isOpen && !balloon){
       createBalloon(x,y);
     }
 
-    // --- CONTINUOUS GROW ---
+    // --- GROW ---
     if(isOpen && balloon && state){
       state.x += (x-state.x)*0.2;
       state.y += ((y-220)-state.y)*0.2;
 
-      state.scale += 0.045; // strong visible growth
+      state.scale += 0.045;
       state.angle += 0.05;
 
       balloon.style.left=state.x+'px';
