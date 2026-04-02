@@ -30,6 +30,13 @@ video { width:100vw; height:100vh; object-fit:cover; }
   font-size:80px;
   z-index:9999;
 }
+
+.firework {
+  position:fixed;
+  width:6px; height:6px;
+  border-radius:50%;
+  z-index:9999;
+}
 </style>
 </head>
 
@@ -42,19 +49,22 @@ const video = document.getElementById('video');
 const startBtn = document.getElementById('startBtn');
 
 let balloon=null, state=null;
-let baseline=null;
+let baseline=null, widthBaseline=null;
 
 let isOpen=false;
 let closeTimer=null;
 let openStartTime=null;
 
 let cooldownUntil = 0;
+let lastFireworkTime = 0;
 
 const OPEN_THRESHOLD = 0.015;
 const CLOSE_THRESHOLD = 0.008;
 const CLOSE_DELAY = 400;
 const POP_TIME = 5000;
 const COOLDOWN_MS = 1800;
+
+const FIREWORK_GAP = 250;
 
 const colors=["red","blue","yellow","green","purple","orange"];
 const surprises=["🐶","🐱","🦁","🐼","🚗","🚀","🎉","⭐"];
@@ -97,11 +107,31 @@ function popBalloon(){
   document.body.appendChild(el);
 
   removeBalloon();
-
-  // 👉 start cooldown so new balloon DOESN’T appear immediately
   cooldownUntil = Date.now() + COOLDOWN_MS;
 
   setTimeout(()=>el.remove(),1500);
+}
+
+// 🎆 FIREWORK FUNCTION
+function createFirework(x,y){
+  for(let i=0;i<16;i++){
+    const fw=document.createElement('div');
+    fw.className='firework';
+    fw.style.left=x+'px';
+    fw.style.top=y+'px';
+    fw.style.background=colors[Math.floor(Math.random()*colors.length)];
+    document.body.appendChild(fw);
+
+    const angle=Math.random()*2*Math.PI;
+    const dist=60+Math.random()*60;
+
+    fw.animate([
+      {transform:'translate(0,0)', opacity:1},
+      {transform:`translate(${Math.cos(angle)*dist}px,${Math.sin(angle)*dist}px)`, opacity:0}
+    ], {duration:700});
+
+    setTimeout(()=>fw.remove(),700);
+  }
 }
 
 function startFaceMesh(){
@@ -122,6 +152,8 @@ function startFaceMesh(){
     const left=face[61], right=face[291];
 
     const h=Math.abs(upper.y-lower.y);
+    const w=Math.abs(left.x-right.x);
+    const ratio = h / w;
 
     const rect=video.getBoundingClientRect();
     const x=rect.left+upper.x*rect.width;
@@ -129,11 +161,13 @@ function startFaceMesh(){
 
     if(baseline===null){
       baseline=h;
+      widthBaseline=w;
       return;
     }
 
     if(!isOpen){
       baseline = baseline*0.9 + h*0.1;
+      widthBaseline = widthBaseline*0.9 + w*0.1;
     }
 
     const now=Date.now();
@@ -157,10 +191,16 @@ function startFaceMesh(){
       }
     }
 
-    // 🚫 BLOCK new balloon during cooldown
-    if(now < cooldownUntil){
-      return;
+    // 🎆 TOOTHY SMILE DETECTION
+    const isSmile = (w > widthBaseline * 1.15) && (h < baseline + CLOSE_THRESHOLD) && (ratio < 0.35);
+
+    if(isSmile && (now - lastFireworkTime > FIREWORK_GAP)){
+      createFirework(x,y);
+      lastFireworkTime = now;
     }
+
+    // 🚫 cooldown block
+    if(now < cooldownUntil) return;
 
     // --- CREATE ---
     if(isOpen && !balloon){
@@ -180,8 +220,7 @@ function startFaceMesh(){
       balloon.style.transform=
         `translate(-50%,-50%) scale(${state.scale}) rotate(${Math.sin(state.angle)*10}deg)`;
 
-      // --- POP ---
-      if(openStartTime && Date.now()-openStartTime > POP_TIME){
+      if(openStartTime && now-openStartTime > POP_TIME){
         popBalloon();
       }
     }
